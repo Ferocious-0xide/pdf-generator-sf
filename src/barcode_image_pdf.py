@@ -76,18 +76,18 @@ def create_barcode_label(data):
     report_number = data.get('reportNumber', 'A1PBV')
     barcode_value = report_number
     
-    # Create Code128 barcode
-    barcode_width = 5 * inch
-    barcode_height = 0.75 * inch
+    # Create Code128 barcode - larger now
+    barcode_width = 6 * inch
+    barcode_height = 1 * inch
     barcode_x = (width - barcode_width) / 2
     barcode_y = height - margin - barcode_height - 0.5 * inch
     
-    barcode_obj = code128.Code128(barcode_value, barWidth=0.01*inch, barHeight=barcode_height)
+    barcode_obj = code128.Code128(barcode_value, barWidth=0.012*inch, barHeight=barcode_height)
     barcode_obj.drawOn(c, barcode_x, barcode_y)
     
-    # Add TS text at top right
+    # Add TS text at top right - moved inward to avoid overlapping border
     c.setFont("Helvetica-Bold", 36)
-    c.drawString(width - margin - 0.5*inch, height - margin - 0.5*inch, "TS")
+    c.drawString(width - margin - 1.0*inch, height - margin - 0.7*inch, "TS")
     
     # Add data text fields on the left side
     c.setFont("Helvetica-Bold", 18)

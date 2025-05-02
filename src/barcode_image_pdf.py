@@ -53,26 +53,23 @@ class BarcodeData(db.Model):
         }
 
 def create_barcode_label(data):
-    # Set dimensions in pixels - even larger
-    width = 2400
-    height = 2400
+    # Set dimensions in pixels (very large)
+    width = 2000 
+    height = 2000
     
     # Create a new white image
     img = Image.new('RGB', (width, height), color='white')
     draw = ImageDraw.Draw(img)
     
-    # Use PIL's default font - which is guaranteed to work anywhere
-    # We'll use the default font at maximum size
-    regular_font = ImageFont.load_default()
-    bold_font = ImageFont.load_default()
-    small_font = ImageFont.load_default()
+    # Use PIL's default font - it's small but guaranteed to work
+    default_font = ImageFont.load_default()
     
     # Draw border
-    border_margin = 100
+    border_margin = 50
     draw.rectangle(
         [(border_margin, border_margin), 
          (width - border_margin, height - border_margin)], 
-        outline='black', width=6
+        outline='black', width=4
     )
     
     # Generate top barcode 
@@ -84,67 +81,84 @@ def create_barcode_label(data):
     with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
         bc.write(tmp.name)
         barcode_img = Image.open(tmp.name)
-        # Resize barcode to fit - much larger now
+        # Resize barcode to fit
         barcode_img = barcode_img.resize((1200, 300))
         # Paste top barcode
-        img.paste(barcode_img, (200, 200))
+        img.paste(barcode_img, (400, 150))
         tmp_path = tmp.name
     
     # Clean up top barcode temp file
     if os.path.exists(tmp_path):
         os.remove(tmp_path)
     
-    # Draw TS text at top right - draw it manually for maximum visibility
+    # Draw TS text at top right
     ts_text = "TS"
-    ts_position = (width - 250, 200)
-    # Drawing manually by creating a black rectangle with white text
-    draw.rectangle([ts_position, (ts_position[0] + 150, ts_position[1] + 150)], fill='black')
-    draw.text((ts_position[0] + 30, ts_position[1] + 30), ts_text, font=bold_font, fill='white')
+    # Create a separate image for TS text
+    ts_img = Image.new('RGB', (200, 200), color='white')
+    ts_draw = ImageDraw.Draw(ts_img)
+    # Use a much larger font size by creating a larger canvas
+    font_size = 80
+    ts_draw.text((50, 60), ts_text, font=default_font, fill='black')
+    # Resize to make it appear larger
+    ts_img = ts_img.resize((200, 200), Image.LANCZOS)
+    # Paste onto main image
+    img.paste(ts_img, (width - 250, 150))
     
-    # Define text positions
-    left_margin = 200
+    # Create a function to draw enlarged text
+    def draw_large_text(text, position, is_bold=False):
+        # Create temporary image for text at high resolution
+        text_img_width = len(text) * 80
+        text_img_height = 150
+        text_img = Image.new('RGB', (text_img_width, text_img_height), color='white')
+        text_draw = ImageDraw.Draw(text_img)
+        
+        # Draw text multiple times with slight offsets for bold effect if needed
+        if is_bold:
+            for offset in range(-2, 3):
+                text_draw.text((40 + offset, 40), text, font=default_font, fill='black')
+                text_draw.text((40, 40 + offset), text, font=default_font, fill='black')
+        else:
+            text_draw.text((40, 40), text, font=default_font, fill='black')
+        
+        # Scale up to make text appear larger
+        text_img = text_img.resize((text_img_width, text_img_height), Image.LANCZOS)
+        img.paste(text_img, position)
+        return position[1] + text_img_height + 20
     
-    # Create a list of text elements to draw
-    date_value = data.get('date', '05/01/2025')
+    # Define text content
+    left_margin = 150
+    y_pos = 500
+    
+    # Draw all text fields with large text
+    date_text = data.get('date', '05/01/2025')
+    y_pos = draw_large_text(date_text, (left_margin, y_pos), is_bold=True)
+    
     barcode_number = "890005108884"
-    service_info = f"Service: {data.get('service', 'MJG')}"
-    sku_info = f"SKU: {data.get('sku', 'Y')}"
-    jewelry_info = f"Jewelry Type: {data.get('jewelryType', 'Ring')}"
-    weight_info = f"Stated Weight: {data.get('statedWeight', '1.0')} g"
-    count_info = f"Stated Count: {data.get('statedCount', '5')}"
+    y_pos = draw_large_text(barcode_number, (left_margin, y_pos))
+    
+    service_text = f"Service: {data.get('service', 'MJG')}"
+    y_pos = draw_large_text(service_text, (left_margin, y_pos))
+    
+    sku_text = f"SKU: {data.get('sku', 'Y')}"
+    y_pos = draw_large_text(sku_text, (left_margin, y_pos))
+    
+    jewelry_text = f"Jewelry Type: {data.get('jewelryType', 'Ring')}"
+    y_pos = draw_large_text(jewelry_text, (left_margin, y_pos))
+    
+    weight_text = f"Stated Weight: {data.get('statedWeight', '1.0')} g"
+    y_pos = draw_large_text(weight_text, (left_margin, y_pos))
+    
+    count_text = f"Stated Count: {data.get('statedCount', '5')}"
+    y_pos = draw_large_text(count_text, (left_margin, y_pos))
+    
     engraving_label = "Requested Engraving:"
-    engraving_info = f"[{data.get('requestedEngraving', 'kevin rulz')}]"
+    y_pos = draw_large_text(engraving_label, (left_margin, y_pos))
     
-    # Function to draw highlighted text
-    def draw_highlighted_text(position, text, is_bold=False):
-        text_width = len(text) * 40  # Approximate width
-        text_height = 100
-        # Draw black background rectangle
-        draw.rectangle(
-            [position, (position[0] + text_width, position[1] + text_height)],
-            fill='black'
-        )
-        # Draw white text
-        draw.text(
-            (position[0] + 20, position[1] + 20),
-            text,
-            font=bold_font if is_bold else regular_font,
-            fill='white'
-        )
-        return position[1] + text_height + 40  # Return the next Y position
+    engraving_text = f"[{data.get('requestedEngraving', 'kevin rulz')}]"
+    y_pos = draw_large_text(engraving_text, (left_margin, y_pos))
     
-    # Draw all text elements with high contrast
-    y_pos = 600
-    y_pos = draw_highlighted_text((left_margin, y_pos), date_value, True)
-    y_pos = draw_highlighted_text((left_margin, y_pos), barcode_number)
-    y_pos = draw_highlighted_text((left_margin, y_pos), service_info)
-    y_pos = draw_highlighted_text((left_margin, y_pos), sku_info)
-    y_pos = draw_highlighted_text((left_margin, y_pos), jewelry_info)
-    y_pos = draw_highlighted_text((left_margin, y_pos), weight_info)
-    y_pos = draw_highlighted_text((left_margin, y_pos), count_info)
-    y_pos = draw_highlighted_text((left_margin, y_pos), engraving_label)
-    y_pos = draw_highlighted_text((left_margin, y_pos), engraving_info)
-    y_pos = draw_highlighted_text((left_margin, y_pos), report_number, True)
+    # Draw report number at the bottom
+    y_pos = draw_large_text(report_number, (left_margin, y_pos), is_bold=True)
     
     # Generate bottom barcode
     with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
@@ -153,61 +167,69 @@ def create_barcode_label(data):
         # Resize barcode to fit at bottom
         barcode_img = barcode_img.resize((1200, 300))
         # Paste bottom barcode
-        img.paste(barcode_img, (200, height - 400))
+        img.paste(barcode_img, (400, height - 400))
         tmp_path = tmp.name
     
     # Clean up bottom barcode temp file
     if os.path.exists(tmp_path):
         os.remove(tmp_path)
     
-    # Draw table on the right with high contrast
-    table_width = 600
-    table_height = 1000
+    # Draw table on the right
+    table_width = 500
+    table_height = 800
     table_x = width - border_margin - table_width - 50
-    table_y = 600
-    cell_height = 120
+    table_y = 500
+    cell_height = 100
     
     # Table data
     table_data = [
         'IMG', 'EST WT', 'PRE', 'DBL', 'QA', 'SQL', 'ENG', 'SC'
     ]
     
-    # Draw table grid - solid black outline
+    # Draw table grid
     draw.rectangle(
         [(table_x, table_y), 
          (table_x + table_width, table_y + table_height)], 
-        outline='black', width=4
+        outline='black', width=3
     )
     
     # Draw horizontal lines
     for i in range(1, len(table_data)):
         y = table_y + i * cell_height
-        draw.line([(table_x, y), (table_x + table_width, y)], fill='black', width=4)
+        draw.line([(table_x, y), (table_x + table_width, y)], fill='black', width=3)
     
     # Draw vertical divider
-    col_width = 400
+    col_width = 350
     draw.line(
         [(table_x + col_width, table_y), 
          (table_x + col_width, table_y + table_height)], 
-        fill='black', width=4
+        fill='black', width=3
     )
     
-    # Add table labels - using high contrast
+    # Add table labels using the large text technique
     for i, label in enumerate(table_data):
-        y = table_y + i * cell_height
-        cell_rect = [(table_x + 2, y + 2), (table_x + col_width - 2, y + cell_height - 2)]
-        # Fill cell with light gray
-        draw.rectangle(cell_rect, fill='#EEEEEE')
-        # Draw text centered in cell
-        text_x = table_x + 20
-        text_y = y + 40
-        draw.text((text_x, text_y), label, font=small_font, fill='black')
+        y = table_y + i * cell_height + 30
+        
+        # Create temporary image for text
+        label_img_width = 300
+        label_img_height = 60
+        label_img = Image.new('RGB', (label_img_width, label_img_height), color='white')
+        label_draw = ImageDraw.Draw(label_img)
+        
+        # Draw the label text
+        label_draw.text((20, 15), label, font=default_font, fill='black')
+        
+        # Scale up for visibility
+        label_img = label_img.resize((label_img_width, label_img_height), Image.LANCZOS)
+        img.paste(label_img, (table_x + 20, y))
         
         # Add Y|N for the ENG row
         if label == 'ENG':
-            yn_cell_rect = [(table_x + col_width + 2, y + 2), (table_x + table_width - 2, y + cell_height - 2)]
-            draw.rectangle(yn_cell_rect, fill='#EEEEEE')
-            draw.text((table_x + col_width + 50, text_y), "Y|N", font=small_font, fill='black')
+            yn_img = Image.new('RGB', (100, 60), color='white')
+            yn_draw = ImageDraw.Draw(yn_img)
+            yn_draw.text((20, 15), "Y|N", font=default_font, fill='black')
+            yn_img = yn_img.resize((100, 60), Image.LANCZOS)
+            img.paste(yn_img, (table_x + col_width + 50, y))
     
     # Save a local copy for debugging only if not on Heroku
     if 'DYNO' not in os.environ:
@@ -222,10 +244,10 @@ def convert_image_to_pdf(image):
     # Create a BytesIO buffer for the PDF
     buffer = io.BytesIO()
     
-    # Set PDF size to a standard size
+    # Use a larger PDF page size
     page_size = (8.5*inch, 11*inch)
     
-    # Create a canvas with larger page size
+    # Create the canvas
     c = canvas.Canvas(buffer, pagesize=page_size)
     
     # Convert PIL Image to a format ReportLab can use
@@ -234,15 +256,15 @@ def convert_image_to_pdf(image):
     img_data.seek(0)
     img_reader = ImageReader(img_data)
     
-    # Draw the image on the PDF with maximum size while preserving margins
+    # Minimize margins to make the image as large as possible
     margin = 0.25 * inch
     image_width = page_size[0] - 2 * margin
     image_height = image_width  # Keep it square
     
-    # Calculate y position to center vertically
+    # Center the image on the page
     y_position = (page_size[1] - image_height) / 2
     
-    # Draw the image on the PDF
+    # Draw the image on the PDF with maximum size
     c.drawImage(img_reader, margin, y_position, width=image_width, height=image_height)
     
     # Save the PDF

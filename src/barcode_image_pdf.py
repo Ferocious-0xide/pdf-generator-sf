@@ -439,6 +439,187 @@ def regenerate_image(id):
             download_name=f'barcode_{barcode.report_number}.pdf'
         )
 
+@app.route('/generate_pdf_from_base64', methods=['POST'])
+def generate_pdf_from_base64():
+    try:
+        # Get JSON data from request
+        data = request.json
+        
+        # Save data to database
+        barcode_id = save_barcode_data(data)
+        
+        # Create a BytesIO buffer for the PDF
+        buffer = io.BytesIO()
+        
+        # Set page dimensions (8.5 x 11 inches)
+        width, height = letter
+        
+        # Create a canvas object
+        c = canvas.Canvas(buffer, pagesize=letter)
+        
+        # Draw border with margin
+        margin = 0.5 * inch
+        c.setStrokeColor(black)
+        c.setLineWidth(2)
+        c.rect(margin, margin, width - 2*margin, height - 2*margin)
+        
+        # Extract base64 encoded barcode
+        barcode_base64 = data.get('barcodeBase64', '')
+        
+        # Convert base64 to image
+        if barcode_base64:
+            try:
+                # Fix padding if needed
+                barcode_base64 += '=' * (-len(barcode_base64) % 4)
+                
+                # Decode base64
+                barcode_data = base64.b64decode(barcode_base64)
+                
+                # Create a temporary file to save the image
+                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                    tmp.write(barcode_data)
+                    tmp_path = tmp.name
+                
+                # Use ReportLab to draw the image
+                barcode_width = 6 * inch
+                barcode_height = 1 * inch
+                barcode_x = (width - barcode_width) / 2
+                barcode_y = height - margin - barcode_height - 0.5 * inch
+                
+                # Draw the provided barcode image
+                c.drawImage(tmp_path, barcode_x, barcode_y, width=barcode_width, height=barcode_height)
+                
+                # Clean up temp file
+                os.unlink(tmp_path)
+            except Exception as e:
+                print(f"Error processing barcode image: {str(e)}")
+        
+        # Add TS text at top right - moved inward to avoid overlapping border
+        c.setFont("Helvetica-Bold", 36)
+        c.drawString(width - margin - 1.0*inch, height - margin - 0.7*inch, "TS")
+        
+        # Add data text fields on the left side
+        c.setFont("Helvetica-Bold", 18)
+        text_x = 1.0 * inch
+        text_y = height - 2.5 * inch
+        
+        # Date (bold)
+        date_value = data.get('date', '05/01/2025')
+        c.drawString(text_x, text_y, date_value)
+        text_y -= 0.5 * inch
+        
+        # Switch to regular font for most fields
+        c.setFont("Helvetica", 18)
+        
+        # Barcode number
+        barcode_number = "890005108884"
+        c.drawString(text_x, text_y, barcode_number)
+        text_y -= 0.5 * inch
+        
+        # Service info
+        service_text = f"Service: {data.get('service', 'MJG')}"
+        c.drawString(text_x, text_y, service_text)
+        text_y -= 0.5 * inch
+        
+        # SKU info
+        sku_text = f"SKU: {data.get('sku', 'Y')}"
+        c.drawString(text_x, text_y, sku_text)
+        text_y -= 0.5 * inch
+        
+        # Jewelry Type
+        jewelry_text = f"Jewelry Type: {data.get('jewelryType', 'Ring')}"
+        c.drawString(text_x, text_y, jewelry_text)
+        text_y -= 0.5 * inch
+        
+        # Stated Weight
+        weight_text = f"Stated Weight: {data.get('statedWeight', '1.0')} g"
+        c.drawString(text_x, text_y, weight_text)
+        text_y -= 0.5 * inch
+        
+        # Stated Count
+        count_text = f"Stated Count: {data.get('statedCount', '5')}"
+        c.drawString(text_x, text_y, count_text)
+        text_y -= 0.5 * inch
+        
+        # Requested Engraving
+        c.drawString(text_x, text_y, "Requested Engraving:")
+        text_y -= 0.4 * inch
+        
+        engraving_text = f"[{data.get('requestedEngraving', 'kevin rulz')}]"
+        c.drawString(text_x, text_y, engraving_text)
+        text_y -= 0.6 * inch
+        
+        # Report number (bold)
+        c.setFont("Helvetica-Bold", 18)
+        report_number = data.get('reportNumber', 'A1PBV')
+        c.drawString(text_x, text_y, report_number)
+        
+        # Draw table on the right
+        table_width = 3 * inch
+        table_height = 4 * inch
+        table_x = width - margin - table_width - 0.25 * inch
+        table_y = text_y + 0.5 * inch
+        
+        # Table data
+        table_data = [
+            'IMG', 'EST WT', 'PRE', 'DBL', 'QA', 'SQL', 'ENG', 'SC'
+        ]
+        
+        # Draw table outline
+        c.rect(table_x, table_y, table_width, table_height)
+        
+        # Draw table rows
+        row_height = table_height / len(table_data)
+        for i in range(1, len(table_data)):
+            y = table_y + i * row_height
+            c.line(table_x, y, table_x + table_width, y)
+        
+        # Draw vertical divider
+        col_width = 2 * inch
+        c.line(table_x + col_width, table_y, table_x + col_width, table_y + table_height)
+        
+        # Add table labels
+        c.setFont("Helvetica", 14)
+        for i, label in enumerate(table_data):
+            y = table_y + (i + 0.5) * row_height
+            c.drawString(table_x + 0.1 * inch, y - 0.1 * inch, label)
+            
+            # Add Y|N for the ENG row
+            if label == 'ENG':
+                c.drawString(table_x + col_width + 0.1 * inch, y - 0.1 * inch, "Y|N")
+        
+        # Draw bottom barcode
+        if barcode_base64:
+            try:
+                # Create a temporary file again for the bottom barcode
+                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                    tmp.write(barcode_data)
+                    tmp_path = tmp.name
+                
+                bottom_barcode_y = 1.25 * inch
+                c.drawImage(tmp_path, barcode_x, bottom_barcode_y, width=barcode_width, height=barcode_height)
+                
+                # Clean up temp file
+                os.unlink(tmp_path)
+            except Exception as e:
+                print(f"Error processing bottom barcode image: {str(e)}")
+        
+        # Finish the canvas and get the PDF
+        c.save()
+        buffer.seek(0)
+        
+        # Return the PDF as response
+        return send_file(
+            buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f'barcode_{data.get("reportNumber", "label")}.pdf'
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
 # Health check endpoint
 @app.route('/health', methods=['GET'])
 def health_check():

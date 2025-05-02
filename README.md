@@ -74,9 +74,14 @@ docker-compose up -d
 The service provides the following endpoints:
 
 ```
-POST /generate_barcode_pdf  # Generates a PDF file
+POST /generate_barcode_pdf    # Generates a PDF with a code128 barcode
 POST /generate_barcode_image  # Generates a PNG image
-GET /health  # Health check endpoint
+POST /generate_pdf_from_base64  # Generates a PDF from a base64-encoded barcode (for Salesforce)
+GET /health                   # Health check endpoint
+GET /barcodes                 # Lists all saved barcodes
+GET /barcodes/<id>            # Gets a specific barcode by ID
+GET /barcodes/<id>/regenerate_pdf   # Regenerates a PDF from saved data
+GET /barcodes/<id>/regenerate_image # Regenerates an image from saved data
 ```
 
 ### Request body (JSON):
@@ -98,6 +103,70 @@ GET /health  # Health check endpoint
 ### Response:
 
 The API returns either a PDF file or PNG image with a 3"x3" barcode label, depending on the endpoint used.
+
+## Salesforce Integration
+
+To integrate with Salesforce, use the `/generate_pdf_from_base64` endpoint which is specifically designed to accept base64-encoded barcode images from Salesforce. 
+
+### Integration Details for Salesforce Team
+
+#### API Endpoint URL:
+```
+https://barcode-pdf-generator-efeb33ff5fd5.herokuapp.com/generate_pdf_from_base64
+```
+
+#### HTTP Method:
+- POST
+
+#### Headers:
+- Content-Type: application/json
+
+#### Request Payload Format:
+```json
+{
+  "barcodeBase64": "[base64-encoded-barcode-image]",
+  "date": "05/01/2025",
+  "service": "MJG",
+  "sku": "Y",
+  "jewelryType": "Ring",
+  "statedWeight": 1.00,
+  "statedCount": 5,
+  "requestedEngraving": "kevin rulz",
+  "reportNumber": "A1PBV"
+}
+```
+
+#### Response:
+- Content-Type: application/pdf
+- Body: Binary PDF file
+
+#### Sample cURL Command (for testing):
+```
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"barcodeBase64":"iVBORw0KGgoAAAANSUhEUgAAAZkAAACCAQAAAAC8uIiPAAAACXBIWXMAABcSAAAXEgFnn9JSAAAAEnRFWHRTb2Z0d2FyZQBCYXJjb2RlNEryjnYuAAABvklEQVR4Xu3TsWrcMBzHcV09eClRujUQ0JAX6JgsUR+l0CFzt06VoYOXgNcMgXuUOnhwh9Jn8KFCVx1ZdFTVr38lV2hlhTiFbn9tB9+POekvCSDqV6dH1fq6v5Rf37yewsWJrq4Oz/zR5z48/3Zhq2e1Pj17qa6Puy8HBwZoBCNGjBgxYsSIESNGjBgxYsSIESNGjBgxYvTf0JMXo/2aoSjjCpPBEIQJ9SRMA6ezZoac9BQqfCTkKkLC9DJrikg38g5NhD7Qrzprhm673dBr2ucBIObH/DhXLVj1swQOkSFMSbUgpBR0mZJCSEht/doS0jdZslDKCTU7dE2Sx5C3hKiU9ssRbSnbmfDCscKNp7rZUg7tbVB4LCGhTBykyUlFIzTlpAWFQY0aG+ypIS8cfK7/el1PdAx0nBXWVJCDmhHS1uj/zXScPsXWVJCtIWho4GmY+u8ke5dlpTQANhGmD26/8tfq4TaP5BMaMk1kr/ReguV0JAlBUSzpSwdRLchZOQSFDR0C7vzehyiotP79Oh7cuK9UIKuAr3Fvoo6CNU8/nLvkEwIUx11Gq7KmjLqNd3UCl7RVW/Qm6yZoSXr39AvKgBwgEJ01wkAAAAASUVORK5CYII=","date":"05/01/2025","service":"MJG","sku":"Y","jewelryType":"Ring","statedWeight":1.00,"statedCount":5,"requestedEngraving":"kevin rulz","reportNumber":"A1PBV"}' \
+  -o salesforce_test.pdf \
+  https://barcode-pdf-generator-efeb33ff5fd5.herokuapp.com/generate_pdf_from_base64
+```
+
+#### Important Notes:
+- The endpoint expects the barcode image to be properly base64 encoded
+- All fields shown in the example payload are expected
+- The response is a PDF file that can be saved directly
+- There is no authentication currently implemented
+- The endpoint stores the data in the database for future reference
+
+#### Troubleshooting:
+- If you receive a 500 error, check that your payload matches the expected format
+- For debugging issues, contact the API administrator
+
+### General Salesforce Integration
+
+To integrate with Salesforce Flow:
+1. Deploy this service to an accessible endpoint
+2. In your Salesforce Flow, use the "HTTP Request" action to make a POST request to the `/generate_pdf_from_base64` endpoint
+3. Include the JSON payload with all required fields
+4. Handle the PDF response in your flow
 
 ## Project Structure
 
@@ -127,10 +196,10 @@ python tests/test_api.py
 
 This will generate a PDF file named `test_output.pdf` in the current directory.
 
-## Salesforce Integration
+To test the Salesforce integration:
 
-To integrate with Salesforce Flow:
-1. Deploy this service to an accessible endpoint
-2. In your Salesforce Flow, use the "HTTP Request" action to make a POST request to the `/generate_barcode_pdf` endpoint
-3. Include the JSON payload with all required fields
-4. Handle the PDF response in your flow
+```bash
+python test_salesforce_api.py
+```
+
+This will test the `/generate_pdf_from_base64` endpoint and verify that it works correctly.

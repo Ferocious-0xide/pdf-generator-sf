@@ -53,26 +53,26 @@ class BarcodeData(db.Model):
         }
 
 def create_barcode_label(data):
-    # Set dimensions in pixels (3 inches at 300 DPI)
-    width = 900
-    height = 900
+    # Set dimensions in pixels - much larger now
+    width = 1800
+    height = 1800
     
     # Create a new white image
     img = Image.new('RGB', (width, height), color='white')
     draw = ImageDraw.Draw(img)
     
-    # Try to load fonts (fallback to default if not available)
+    # Try to load fonts with extremely large sizes
     try:
         # For macOS/Linux
-        regular_font = ImageFont.truetype("Arial", 100)
-        bold_font = ImageFont.truetype("Arial-Bold", 120)
-        small_font = ImageFont.truetype("Arial", 80)
+        regular_font = ImageFont.truetype("Arial", 150)
+        bold_font = ImageFont.truetype("Arial-Bold", 180)
+        small_font = ImageFont.truetype("Arial", 120)
     except IOError:
         try:
             # Second attempt with system fonts
-            regular_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 100)
-            bold_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 120)
-            small_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 80)
+            regular_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 150)
+            bold_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 180)
+            small_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 120)
         except IOError:
             # Fallback to default
             regular_font = ImageFont.load_default()
@@ -80,11 +80,11 @@ def create_barcode_label(data):
             small_font = ImageFont.load_default()
     
     # Draw border
-    border_margin = 40
+    border_margin = 80
     draw.rectangle(
         [(border_margin, border_margin), 
          (width - border_margin, height - border_margin)], 
-        outline='black', width=2
+        outline='black', width=4
     )
     
     # Generate top barcode 
@@ -96,10 +96,10 @@ def create_barcode_label(data):
     with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
         bc.write(tmp.name)
         barcode_img = Image.open(tmp.name)
-        # Resize barcode to fit
-        barcode_img = barcode_img.resize((450, 100))
+        # Resize barcode to fit - much larger now
+        barcode_img = barcode_img.resize((900, 200))
         # Paste top barcode
-        img.paste(barcode_img, (80, 80))
+        img.paste(barcode_img, (160, 160))
         tmp_path = tmp.name
     
     # Clean up top barcode temp file
@@ -107,53 +107,53 @@ def create_barcode_label(data):
         os.remove(tmp_path)
     
     # Draw TS text at top right
-    draw.text((width - 100, 90), "TS", font=bold_font, fill='black')
+    draw.text((width - 200, 180), "TS", font=bold_font, fill='black')
     
     # Left margin for text
-    left_margin = 80
+    left_margin = 160
     
     # Draw date
-    y_position = 200
+    y_position = 400
     draw.text((left_margin, y_position), data.get('date', '05/01/2025'), font=bold_font, fill='black')
     
     # Draw barcode number
-    y_position += 70
+    y_position += 140
     draw.text((left_margin, y_position), "890005108884", font=regular_font, fill='black')
     
     # Draw service info and other fields
-    y_position += 70
+    y_position += 140
     draw.text((left_margin, y_position), f"Service: {data.get('service', 'MJG')}", font=regular_font, fill='black')
     
-    y_position += 60
+    y_position += 120
     draw.text((left_margin, y_position), f"SKU: {data.get('sku', 'Y')}", font=regular_font, fill='black')
     
-    y_position += 60
+    y_position += 120
     draw.text((left_margin, y_position), f"Jewelry Type: {data.get('jewelryType', 'Ring')}", font=regular_font, fill='black')
     
-    y_position += 60
+    y_position += 120
     draw.text((left_margin, y_position), f"Stated Weight: {data.get('statedWeight', '1.0')} g", font=regular_font, fill='black')
     
-    y_position += 60
+    y_position += 120
     draw.text((left_margin, y_position), f"Stated Count: {data.get('statedCount', '5')}", font=regular_font, fill='black')
     
-    y_position += 60
+    y_position += 120
     draw.text((left_margin, y_position), "Requested Engraving:", font=regular_font, fill='black')
     
-    y_position += 40
+    y_position += 80
     draw.text((left_margin, y_position), f"[{data.get('requestedEngraving', 'kevin rulz')}]", font=regular_font, fill='black')
     
     # Draw report number in bold
-    y_position += 70
+    y_position += 140
     draw.text((left_margin, y_position), report_number, font=bold_font, fill='black')
     
     # Generate bottom barcode
     with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
         bc.write(tmp.name)
         barcode_img = Image.open(tmp.name)
-        # Resize barcode to fit at bottom
-        barcode_img = barcode_img.resize((450, 80))
+        # Resize barcode to fit at bottom - much larger now
+        barcode_img = barcode_img.resize((900, 160))
         # Paste bottom barcode
-        img.paste(barcode_img, (80, height - 120))
+        img.paste(barcode_img, (160, height - 240))
         tmp_path = tmp.name
     
     # Clean up bottom barcode temp file
@@ -161,11 +161,11 @@ def create_barcode_label(data):
         os.remove(tmp_path)
     
     # Draw table on the right
-    table_width = 250
-    table_height = 400
-    table_x = width - border_margin - table_width - 20
-    table_y = 200
-    cell_height = 50
+    table_width = 500
+    table_height = 800
+    table_x = width - border_margin - table_width - 40
+    table_y = 400
+    cell_height = 100
     
     # Table data
     table_data = [
@@ -176,30 +176,30 @@ def create_barcode_label(data):
     draw.rectangle(
         [(table_x, table_y), 
          (table_x + table_width, table_y + table_height)], 
-        outline='black', width=1
+        outline='black', width=2
     )
     
     # Draw horizontal lines
     for i in range(1, len(table_data)):
         y = table_y + i * cell_height
-        draw.line([(table_x, y), (table_x + table_width, y)], fill='black', width=1)
+        draw.line([(table_x, y), (table_x + table_width, y)], fill='black', width=2)
     
     # Draw vertical divider
-    col_width = 150
+    col_width = 300
     draw.line(
         [(table_x + col_width, table_y), 
          (table_x + col_width, table_y + table_height)], 
-        fill='black', width=1
+        fill='black', width=2
     )
     
     # Add table labels
     for i, label in enumerate(table_data):
-        y = table_y + i * cell_height + 15
-        draw.text((table_x + 10, y), label, font=small_font, fill='black')
+        y = table_y + i * cell_height + 30
+        draw.text((table_x + 20, y), label, font=small_font, fill='black')
         
         # Add Y|N for the ENG row
         if label == 'ENG':
-            draw.text((table_x + col_width + 10, y), "Y|N", font=small_font, fill='black')
+            draw.text((table_x + col_width + 20, y), "Y|N", font=small_font, fill='black')
     
     # Save a local copy for debugging only if not on Heroku
     if 'DYNO' not in os.environ:
@@ -214,8 +214,8 @@ def convert_image_to_pdf(image):
     # Create a BytesIO buffer for the PDF
     buffer = io.BytesIO()
     
-    # Set PDF size to 8.5x8.5 inches to ensure large readable text
-    page_size = (8.5*inch, 8.5*inch)
+    # Set PDF size to letter size (8.5x11 inches) - standard size
+    page_size = (8.5*inch, 11*inch)
     
     # Create a canvas with larger page size
     c = canvas.Canvas(buffer, pagesize=page_size)
@@ -226,8 +226,16 @@ def convert_image_to_pdf(image):
     img_data.seek(0)
     img_reader = ImageReader(img_data)
     
-    # Draw the image on the PDF, scaling it to fill the page
-    c.drawImage(img_reader, 0, 0, width=page_size[0], height=page_size[1])
+    # Center the image on the page with margins
+    margin = 0.5 * inch
+    image_width = page_size[0] - 2 * margin
+    image_height = image_width  # Keep it square
+    
+    # Calculate y position to center vertically
+    y_position = (page_size[1] - image_height) / 2
+    
+    # Draw the image on the PDF, scaling it to fill most of the page
+    c.drawImage(img_reader, margin, y_position, width=image_width, height=image_height)
     
     # Save the PDF
     c.save()

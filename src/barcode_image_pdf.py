@@ -64,15 +64,15 @@ def create_barcode_label(data):
     # Try to load fonts (fallback to default if not available)
     try:
         # For macOS/Linux
-        regular_font = ImageFont.truetype("Arial", 42)
-        bold_font = ImageFont.truetype("Arial-Bold", 48)
-        small_font = ImageFont.truetype("Arial", 32)
+        regular_font = ImageFont.truetype("Arial", 72)
+        bold_font = ImageFont.truetype("Arial-Bold", 84)
+        small_font = ImageFont.truetype("Arial", 56)
     except IOError:
         try:
             # Second attempt with system fonts
-            regular_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 42)
-            bold_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 48)
-            small_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 32)
+            regular_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 72)
+            bold_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 84)
+            small_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 56)
         except IOError:
             # Fallback to default
             regular_font = ImageFont.load_default()

@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Barcode Generator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .barcode-card {
+            margin-bottom: 20px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .card-header {
+            background-color: #f8f9fa;
+            font-weight: bold;
+        }
+        .action-buttons {
+            display: flex;
+            justify-content: space-between;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="mb-4">Barcode Generator</h1>
+        
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        Create New Barcode
+                    </div>
+                    <div class="card-body">
+                        <form id="barcode-form">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="reportNumber" class="form-label">Report Number</label>
+                                    <input type="text" class="form-control" id="reportNumber" name="reportNumber" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="date" class="form-label">Date</label>
+                                    <input type="text" class="form-control" id="date" name="date" placeholder="MM/DD/YYYY" required>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-4 mb-3">
+                                    <label for="service" class="form-label">Service</label>
+                                    <input type="text" class="form-control" id="service" name="service">
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label for="sku" class="form-label">SKU</label>
+                                    <input type="text" class="form-control" id="sku" name="sku">
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label for="jewelryType" class="form-label">Jewelry Type</label>
+                                    <input type="text" class="form-control" id="jewelryType" name="jewelryType">
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="statedWeight" class="form-label">Stated Weight</label>
+                                    <input type="text" class="form-control" id="statedWeight" name="statedWeight">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="statedCount" class="form-label">Stated Count</label>
+                                    <input type="text" class="form-control" id="statedCount" name="statedCount">
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="requestedEngraving" class="form-label">Requested Engraving</label>
+                                <input type="text" class="form-control" id="requestedEngraving" name="requestedEngraving">
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-primary" onclick="generateBarcode('image')">Generate Image</button>
+                                <button type="button" class="btn btn-success" onclick="generateBarcode('pdf')">Generate PDF</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <h2 class="mb-3">Saved Barcodes</h2>
+        <div id="barcodes-container" class="row">
+            <!-- Barcodes will be loaded here -->
+            <div class="text-center">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Load saved barcodes when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            loadBarcodes();
+        });
+
+        // Generate a new barcode
+        function generateBarcode(type) {
+            const form = document.getElementById('barcode-form');
+            const formData = new FormData(form);
+            const data = {};
+            
+            formData.forEach((value, key) => {
+                data[key] = value;
+            });
+            
+            const endpoint = type === 'pdf' ? '/generate_barcode_pdf' : '/generate_barcode_image';
+            
+            fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.blob();
+            })
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `barcode_${data.reportNumber}.${type === 'pdf' ? 'pdf' : 'png'}`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                
+                // Reload barcodes after generating new one
+                setTimeout(loadBarcodes, 500);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error generating barcode: ' + error.message);
+            });
+        }
+
+        // Load saved barcodes
+        function loadBarcodes() {
+            fetch('/barcodes')
+            .then(response => response.json())
+            .then(data => {
+                const container = document.getElementById('barcodes-container');
+                
+                if (data.length === 0) {
+                    container.innerHTML = '<div class="col-12 text-center"><p>No barcodes found.</p></div>';
+                    return;
+                }
+                
+                container.innerHTML = '';
+                
+                data.forEach(barcode => {
+                    const card = document.createElement('div');
+                    card.className = 'col-md-4';
+                    card.innerHTML = `
+                        <div class="card barcode-card">
+                            <div class="card-header">
+                                ${barcode.report_number}
+                            </div>
+                            <div class="card-body">
+                                <p><strong>Date:</strong> ${barcode.date}</p>
+                                <p><strong>Service:</strong> ${barcode.service || 'N/A'}</p>
+                                <p><strong>Jewelry Type:</strong> ${barcode.jewelry_type || 'N/A'}</p>
+                                <p><strong>Created:</strong> ${new Date(barcode.created_at).toLocaleString()}</p>
+                                <div class="action-buttons">
+                                    <a href="/barcodes/${barcode.id}/regenerate_image" class="btn btn-sm btn-primary" target="_blank">Download Image</a>
+                                    <a href="/barcodes/${barcode.id}/regenerate_pdf" class="btn btn-sm btn-success" target="_blank">Download PDF</a>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    container.appendChild(card);
+                });
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                const container = document.getElementById('barcodes-container');
+                container.innerHTML = '<div class="col-12 text-center"><p>Error loading barcodes.</p></div>';
+            });
+        }
+    </script>
+</body>
+</html> 

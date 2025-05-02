@@ -2,7 +2,9 @@ import io
 import base64
 import tempfile
 import os
-from flask import Flask, request, send_file, jsonify
+import datetime
+from flask import Flask, request, send_file, jsonify, render_template
+from flask_sqlalchemy import SQLAlchemy
 from PIL import Image, ImageDraw, ImageFont
 import barcode
 from barcode.writer import ImageWriter
@@ -10,7 +12,40 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import inch
 from reportlab.lib.utils import ImageReader
 
+# Initialize Flask app
 app = Flask(__name__)
+
+# Configure SQLite database (will use PostgreSQL on Heroku)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///barcode_data.db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
+# Define model for storing barcode data
+class BarcodeData(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    report_number = db.Column(db.String(50), nullable=False)
+    date = db.Column(db.String(20), nullable=False)
+    service = db.Column(db.String(20))
+    sku = db.Column(db.String(10))
+    jewelry_type = db.Column(db.String(50))
+    stated_weight = db.Column(db.String(20))
+    stated_count = db.Column(db.String(20))
+    requested_engraving = db.Column(db.String(100))
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'report_number': self.report_number,
+            'date': self.date,
+            'service': self.service,
+            'sku': self.sku,
+            'jewelry_type': self.jewelry_type,
+            'stated_weight': self.stated_weight,
+            'stated_count': self.stated_count,
+            'requested_engraving': self.requested_engraving,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
 
 def create_barcode_label(data):
     # Set dimensions in pixels (3 inches at 300 DPI)
@@ -190,11 +225,35 @@ def convert_image_to_pdf(image):
     buffer.seek(0)
     return buffer
 
+def save_barcode_data(data):
+    """Save the barcode data to the database"""
+    barcode_data = BarcodeData(
+        report_number=data.get('reportNumber', ''),
+        date=data.get('date', ''),
+        service=data.get('service', ''),
+        sku=data.get('sku', ''),
+        jewelry_type=data.get('jewelryType', ''),
+        stated_weight=data.get('statedWeight', ''),
+        stated_count=data.get('statedCount', ''),
+        requested_engraving=data.get('requestedEngraving', '')
+    )
+    db.session.add(barcode_data)
+    db.session.commit()
+    return barcode_data.id
+
+@app.route('/', methods=['GET'])
+def index():
+    """Render the main page"""
+    return render_template('index.html')
+
 @app.route('/generate_barcode_pdf', methods=['POST'])
 def generate_pdf():
     try:
         # Get JSON data from request
         data = request.json
+        
+        # Save data to database
+        barcode_id = save_barcode_data(data)
         
         # Create the image
         label_image = create_barcode_label(data)
@@ -207,7 +266,7 @@ def generate_pdf():
             pdf_buffer,
             mimetype='application/pdf',
             as_attachment=True,
-            download_name='barcode.pdf'
+            download_name=f'barcode_{data.get("reportNumber", "label")}.pdf'
         )
     except Exception as e:
         import traceback
@@ -219,6 +278,9 @@ def generate_image():
     try:
         # Get JSON data from request
         data = request.json
+        
+        # Save data to database
+        barcode_id = save_barcode_data(data)
         
         # Create the image
         label_image = create_barcode_label(data)
@@ -233,17 +295,95 @@ def generate_image():
             img_io,
             mimetype='image/png',
             as_attachment=True,
-            download_name='barcode.png'
+            download_name=f'barcode_{data.get("reportNumber", "label")}.png'
         )
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+@app.route('/barcodes', methods=['GET'])
+def list_barcodes():
+    """Get all saved barcode data"""
+    barcodes = BarcodeData.query.order_by(BarcodeData.created_at.desc()).all()
+    return jsonify([barcode.to_dict() for barcode in barcodes])
+
+@app.route('/barcodes/<int:id>', methods=['GET'])
+def get_barcode(id):
+    """Get a specific barcode by ID"""
+    barcode = BarcodeData.query.get_or_404(id)
+    return jsonify(barcode.to_dict())
+
+@app.route('/barcodes/<int:id>/regenerate_pdf', methods=['GET'])
+def regenerate_pdf(id):
+    """Regenerate PDF from saved data"""
+    barcode = BarcodeData.query.get_or_404(id)
+    
+    # Convert database model to dict that matches the expected format
+    data = {
+        'reportNumber': barcode.report_number,
+        'date': barcode.date,
+        'service': barcode.service,
+        'sku': barcode.sku,
+        'jewelryType': barcode.jewelry_type,
+        'statedWeight': barcode.stated_weight,
+        'statedCount': barcode.stated_count,
+        'requestedEngraving': barcode.requested_engraving
+    }
+    
+    # Create the image and PDF
+    label_image = create_barcode_label(data)
+    pdf_buffer = convert_image_to_pdf(label_image)
+    
+    # Return the PDF
+    return send_file(
+        pdf_buffer,
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=f'barcode_{barcode.report_number}.pdf'
+    )
+
+@app.route('/barcodes/<int:id>/regenerate_image', methods=['GET'])
+def regenerate_image(id):
+    """Regenerate image from saved data"""
+    barcode = BarcodeData.query.get_or_404(id)
+    
+    # Convert database model to dict that matches the expected format
+    data = {
+        'reportNumber': barcode.report_number,
+        'date': barcode.date,
+        'service': barcode.service,
+        'sku': barcode.sku,
+        'jewelryType': barcode.jewelry_type,
+        'statedWeight': barcode.stated_weight,
+        'statedCount': barcode.stated_count,
+        'requestedEngraving': barcode.requested_engraving
+    }
+    
+    # Create the image
+    label_image = create_barcode_label(data)
+    
+    # Convert to bytes
+    img_io = io.BytesIO()
+    label_image.save(img_io, 'PNG')
+    img_io.seek(0)
+    
+    # Return the image
+    return send_file(
+        img_io,
+        mimetype='image/png',
+        as_attachment=True,
+        download_name=f'barcode_{barcode.report_number}.png'
+    )
+
 # Health check endpoint
 @app.route('/health', methods=['GET'])
 def health_check():
     return jsonify({'status': 'healthy'}), 200
+
+# Create database tables
+with app.app_context():
+    db.create_all()
 
 if __name__ == '__main__':
     # Use port 8080 instead of 5000 to avoid conflicts with macOS AirPlay

@@ -64,15 +64,15 @@ def create_barcode_label(data):
     # Try to load fonts (fallback to default if not available)
     try:
         # For macOS/Linux
-        regular_font = ImageFont.truetype("Arial", 72)
-        bold_font = ImageFont.truetype("Arial-Bold", 84)
-        small_font = ImageFont.truetype("Arial", 56)
+        regular_font = ImageFont.truetype("Arial", 100)
+        bold_font = ImageFont.truetype("Arial-Bold", 120)
+        small_font = ImageFont.truetype("Arial", 80)
     except IOError:
         try:
             # Second attempt with system fonts
-            regular_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 72)
-            bold_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 84)
-            small_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 56)
+            regular_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 100)
+            bold_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 120)
+            small_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 80)
         except IOError:
             # Fallback to default
             regular_font = ImageFont.load_default()
@@ -214,8 +214,11 @@ def convert_image_to_pdf(image):
     # Create a BytesIO buffer for the PDF
     buffer = io.BytesIO()
     
-    # Create a canvas with 3x3 inch size
-    c = canvas.Canvas(buffer, pagesize=(3*inch, 3*inch))
+    # Set PDF size to 8.5x8.5 inches to ensure large readable text
+    page_size = (8.5*inch, 8.5*inch)
+    
+    # Create a canvas with larger page size
+    c = canvas.Canvas(buffer, pagesize=page_size)
     
     # Convert PIL Image to a format ReportLab can use
     img_data = io.BytesIO()
@@ -223,8 +226,8 @@ def convert_image_to_pdf(image):
     img_data.seek(0)
     img_reader = ImageReader(img_data)
     
-    # Draw the image on the PDF
-    c.drawImage(img_reader, 0, 0, width=3*inch, height=3*inch)
+    # Draw the image on the PDF, scaling it to fill the page
+    c.drawImage(img_reader, 0, 0, width=page_size[0], height=page_size[1])
     
     # Save the PDF
     c.save()

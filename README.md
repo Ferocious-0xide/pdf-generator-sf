@@ -6,6 +6,10 @@
 
 A Python service that generates 3"x3" PDF barcodes from JSON payloads. Designed to work with Salesforce flows.
 
+## ⚠️ Disclaimer
+
+**PROOF OF CONCEPT ONLY**: This service is currently a proof of concept and is not ready for production use. It lacks proper security measures, comprehensive error handling, load testing, and other requirements for a production-grade application. Use at your own risk and only in development/testing environments.
+
 ## Requirements
 
 - Python 3.9+

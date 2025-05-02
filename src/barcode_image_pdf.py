@@ -5,11 +5,15 @@ import os
 import datetime
 from flask import Flask, request, send_file, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
-from PIL import Image, ImageDraw, ImageFont
 import barcode
 from barcode.writer import ImageWriter
 from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import inch
+from reportlab.lib.pagesizes import letter, inch
+from reportlab.lib.colors import black, white
+from reportlab.graphics.shapes import Drawing
+from reportlab.graphics import renderPM
+from reportlab.graphics.barcode import code128
+from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 
 # Initialize Flask app
@@ -53,224 +57,164 @@ class BarcodeData(db.Model):
         }
 
 def create_barcode_label(data):
-    # Set dimensions in pixels (very large)
-    width = 2000 
-    height = 2000
+    # Set page dimensions (8.5 x 11 inches)
+    width, height = letter
     
-    # Create a new white image
-    img = Image.new('RGB', (width, height), color='white')
-    draw = ImageDraw.Draw(img)
+    # Create a BytesIO buffer for the image
+    buffer = io.BytesIO()
     
-    # Use PIL's default font - it's small but guaranteed to work
-    default_font = ImageFont.load_default()
+    # Create a canvas object with large dimensions
+    c = canvas.Canvas(buffer, pagesize=letter)
     
-    # Draw border
-    border_margin = 50
-    draw.rectangle(
-        [(border_margin, border_margin), 
-         (width - border_margin, height - border_margin)], 
-        outline='black', width=4
-    )
+    # Draw border with margin
+    margin = 0.5 * inch
+    c.setStrokeColor(black)
+    c.setLineWidth(2)
+    c.rect(margin, margin, width - 2*margin, height - 2*margin)
     
-    # Generate top barcode 
+    # Generate top barcode
     report_number = data.get('reportNumber', 'A1PBV')
-    barcode_class = barcode.get_barcode_class('code128')
-    bc = barcode_class(report_number, writer=ImageWriter())
+    barcode_value = report_number
     
-    # Save barcode to a temporary file
-    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-        bc.write(tmp.name)
-        barcode_img = Image.open(tmp.name)
-        # Resize barcode to fit
-        barcode_img = barcode_img.resize((1200, 300))
-        # Paste top barcode
-        img.paste(barcode_img, (400, 150))
-        tmp_path = tmp.name
+    # Create Code128 barcode
+    barcode_width = 5 * inch
+    barcode_height = 0.75 * inch
+    barcode_x = (width - barcode_width) / 2
+    barcode_y = height - margin - barcode_height - 0.5 * inch
     
-    # Clean up top barcode temp file
-    if os.path.exists(tmp_path):
-        os.remove(tmp_path)
+    barcode_obj = code128.Code128(barcode_value, barWidth=0.01*inch, barHeight=barcode_height)
+    barcode_obj.drawOn(c, barcode_x, barcode_y)
     
-    # Draw TS text at top right
-    ts_text = "TS"
-    # Create a separate image for TS text
-    ts_img = Image.new('RGB', (200, 200), color='white')
-    ts_draw = ImageDraw.Draw(ts_img)
-    # Use a much larger font size by creating a larger canvas
-    font_size = 80
-    ts_draw.text((50, 60), ts_text, font=default_font, fill='black')
-    # Resize to make it appear larger
-    ts_img = ts_img.resize((200, 200), Image.LANCZOS)
-    # Paste onto main image
-    img.paste(ts_img, (width - 250, 150))
+    # Add TS text at top right
+    c.setFont("Helvetica-Bold", 36)
+    c.drawString(width - margin - 0.5*inch, height - margin - 0.5*inch, "TS")
     
-    # Create a function to draw enlarged text
-    def draw_large_text(text, position, is_bold=False):
-        # Create temporary image for text at high resolution
-        text_img_width = len(text) * 80
-        text_img_height = 150
-        text_img = Image.new('RGB', (text_img_width, text_img_height), color='white')
-        text_draw = ImageDraw.Draw(text_img)
-        
-        # Draw text multiple times with slight offsets for bold effect if needed
-        if is_bold:
-            for offset in range(-2, 3):
-                text_draw.text((40 + offset, 40), text, font=default_font, fill='black')
-                text_draw.text((40, 40 + offset), text, font=default_font, fill='black')
-        else:
-            text_draw.text((40, 40), text, font=default_font, fill='black')
-        
-        # Scale up to make text appear larger
-        text_img = text_img.resize((text_img_width, text_img_height), Image.LANCZOS)
-        img.paste(text_img, position)
-        return position[1] + text_img_height + 20
+    # Add data text fields on the left side
+    c.setFont("Helvetica-Bold", 18)
+    text_x = 1.0 * inch
+    text_y = height - 2.5 * inch
     
-    # Define text content
-    left_margin = 150
-    y_pos = 500
+    # Date (bold)
+    date_value = data.get('date', '05/01/2025')
+    c.drawString(text_x, text_y, date_value)
+    text_y -= 0.5 * inch
     
-    # Draw all text fields with large text
-    date_text = data.get('date', '05/01/2025')
-    y_pos = draw_large_text(date_text, (left_margin, y_pos), is_bold=True)
+    # Switch to regular font for most fields
+    c.setFont("Helvetica", 18)
     
+    # Barcode number
     barcode_number = "890005108884"
-    y_pos = draw_large_text(barcode_number, (left_margin, y_pos))
+    c.drawString(text_x, text_y, barcode_number)
+    text_y -= 0.5 * inch
     
+    # Service info
     service_text = f"Service: {data.get('service', 'MJG')}"
-    y_pos = draw_large_text(service_text, (left_margin, y_pos))
+    c.drawString(text_x, text_y, service_text)
+    text_y -= 0.5 * inch
     
+    # SKU info
     sku_text = f"SKU: {data.get('sku', 'Y')}"
-    y_pos = draw_large_text(sku_text, (left_margin, y_pos))
+    c.drawString(text_x, text_y, sku_text)
+    text_y -= 0.5 * inch
     
+    # Jewelry Type
     jewelry_text = f"Jewelry Type: {data.get('jewelryType', 'Ring')}"
-    y_pos = draw_large_text(jewelry_text, (left_margin, y_pos))
+    c.drawString(text_x, text_y, jewelry_text)
+    text_y -= 0.5 * inch
     
+    # Stated Weight
     weight_text = f"Stated Weight: {data.get('statedWeight', '1.0')} g"
-    y_pos = draw_large_text(weight_text, (left_margin, y_pos))
+    c.drawString(text_x, text_y, weight_text)
+    text_y -= 0.5 * inch
     
+    # Stated Count
     count_text = f"Stated Count: {data.get('statedCount', '5')}"
-    y_pos = draw_large_text(count_text, (left_margin, y_pos))
+    c.drawString(text_x, text_y, count_text)
+    text_y -= 0.5 * inch
     
-    engraving_label = "Requested Engraving:"
-    y_pos = draw_large_text(engraving_label, (left_margin, y_pos))
+    # Requested Engraving
+    c.drawString(text_x, text_y, "Requested Engraving:")
+    text_y -= 0.4 * inch
     
     engraving_text = f"[{data.get('requestedEngraving', 'kevin rulz')}]"
-    y_pos = draw_large_text(engraving_text, (left_margin, y_pos))
+    c.drawString(text_x, text_y, engraving_text)
+    text_y -= 0.6 * inch
     
-    # Draw report number at the bottom
-    y_pos = draw_large_text(report_number, (left_margin, y_pos), is_bold=True)
-    
-    # Generate bottom barcode
-    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-        bc.write(tmp.name)
-        barcode_img = Image.open(tmp.name)
-        # Resize barcode to fit at bottom
-        barcode_img = barcode_img.resize((1200, 300))
-        # Paste bottom barcode
-        img.paste(barcode_img, (400, height - 400))
-        tmp_path = tmp.name
-    
-    # Clean up bottom barcode temp file
-    if os.path.exists(tmp_path):
-        os.remove(tmp_path)
+    # Report number (bold)
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(text_x, text_y, report_number)
     
     # Draw table on the right
-    table_width = 500
-    table_height = 800
-    table_x = width - border_margin - table_width - 50
-    table_y = 500
-    cell_height = 100
+    table_width = 3 * inch
+    table_height = 4 * inch
+    table_x = width - margin - table_width - 0.25 * inch
+    table_y = text_y + 0.5 * inch
     
     # Table data
     table_data = [
         'IMG', 'EST WT', 'PRE', 'DBL', 'QA', 'SQL', 'ENG', 'SC'
     ]
     
-    # Draw table grid
-    draw.rectangle(
-        [(table_x, table_y), 
-         (table_x + table_width, table_y + table_height)], 
-        outline='black', width=3
-    )
+    # Draw table outline
+    c.rect(table_x, table_y, table_width, table_height)
     
-    # Draw horizontal lines
+    # Draw table rows
+    row_height = table_height / len(table_data)
     for i in range(1, len(table_data)):
-        y = table_y + i * cell_height
-        draw.line([(table_x, y), (table_x + table_width, y)], fill='black', width=3)
+        y = table_y + i * row_height
+        c.line(table_x, y, table_x + table_width, y)
     
     # Draw vertical divider
-    col_width = 350
-    draw.line(
-        [(table_x + col_width, table_y), 
-         (table_x + col_width, table_y + table_height)], 
-        fill='black', width=3
-    )
+    col_width = 2 * inch
+    c.line(table_x + col_width, table_y, table_x + col_width, table_y + table_height)
     
-    # Add table labels using the large text technique
+    # Add table labels
+    c.setFont("Helvetica", 14)
     for i, label in enumerate(table_data):
-        y = table_y + i * cell_height + 30
-        
-        # Create temporary image for text
-        label_img_width = 300
-        label_img_height = 60
-        label_img = Image.new('RGB', (label_img_width, label_img_height), color='white')
-        label_draw = ImageDraw.Draw(label_img)
-        
-        # Draw the label text
-        label_draw.text((20, 15), label, font=default_font, fill='black')
-        
-        # Scale up for visibility
-        label_img = label_img.resize((label_img_width, label_img_height), Image.LANCZOS)
-        img.paste(label_img, (table_x + 20, y))
+        y = table_y + (i + 0.5) * row_height
+        c.drawString(table_x + 0.1 * inch, y - 0.1 * inch, label)
         
         # Add Y|N for the ENG row
         if label == 'ENG':
-            yn_img = Image.new('RGB', (100, 60), color='white')
-            yn_draw = ImageDraw.Draw(yn_img)
-            yn_draw.text((20, 15), "Y|N", font=default_font, fill='black')
-            yn_img = yn_img.resize((100, 60), Image.LANCZOS)
-            img.paste(yn_img, (table_x + col_width + 50, y))
+            c.drawString(table_x + col_width + 0.1 * inch, y - 0.1 * inch, "Y|N")
     
-    # Save a local copy for debugging only if not on Heroku
-    if 'DYNO' not in os.environ:
-        debug_dir = os.path.dirname(os.path.abspath(__file__))
-        debug_file = os.path.join(debug_dir, '..', '..', 'label_debug.png')
-        debug_file = os.path.abspath(debug_file)
-        img.save(debug_file)
+    # Draw bottom barcode
+    bottom_barcode_y = 1.25 * inch
+    barcode_obj.drawOn(c, barcode_x, bottom_barcode_y)
     
-    return img
-
-def convert_image_to_pdf(image):
-    # Create a BytesIO buffer for the PDF
-    buffer = io.BytesIO()
-    
-    # Use a larger PDF page size
-    page_size = (8.5*inch, 11*inch)
-    
-    # Create the canvas
-    c = canvas.Canvas(buffer, pagesize=page_size)
-    
-    # Convert PIL Image to a format ReportLab can use
-    img_data = io.BytesIO()
-    image.save(img_data, format='PNG')
-    img_data.seek(0)
-    img_reader = ImageReader(img_data)
-    
-    # Minimize margins to make the image as large as possible
-    margin = 0.25 * inch
-    image_width = page_size[0] - 2 * margin
-    image_height = image_width  # Keep it square
-    
-    # Center the image on the page
-    y_position = (page_size[1] - image_height) / 2
-    
-    # Draw the image on the PDF with maximum size
-    c.drawImage(img_reader, margin, y_position, width=image_width, height=image_height)
-    
-    # Save the PDF
+    # Finish the canvas and get the image
     c.save()
     buffer.seek(0)
+    
+    # Convert to PNG using reportlab's renderPM
+    from reportlab.graphics import renderPM
+    from reportlab.graphics.shapes import Drawing
+    
+    # Create a new Drawing for the image
+    img_buffer = io.BytesIO()
+    
+    # Use PIL to open the PDF and convert to image
+    from reportlab.lib.utils import ImageReader
+    
+    # For debug purposes only, save on non-Heroku environments
+    if 'DYNO' not in os.environ:
+        try:
+            debug_dir = os.path.dirname(os.path.abspath(__file__))
+            debug_file = os.path.join(debug_dir, '..', '..', 'label_debug.pdf')
+            debug_file = os.path.abspath(debug_file)
+            with open(debug_file, 'wb') as f:
+                f.write(buffer.getvalue())
+        except:
+            pass
+    
+    # Return the PDF buffer directly instead of converting to image
+    buffer.seek(0)
     return buffer
+
+def convert_image_to_pdf(pdf_buffer):
+    # The function is now redundant since create_barcode_label already returns a PDF
+    # Just return the buffer
+    return pdf_buffer
 
 def save_barcode_data(data):
     """Save the barcode data to the database"""
@@ -302,11 +246,8 @@ def generate_pdf():
         # Save data to database
         barcode_id = save_barcode_data(data)
         
-        # Create the image
-        label_image = create_barcode_label(data)
-        
-        # Convert to PDF
-        pdf_buffer = convert_image_to_pdf(label_image)
+        # Create the PDF directly
+        pdf_buffer = create_barcode_label(data)
         
         # Return the PDF as response
         return send_file(
@@ -329,21 +270,59 @@ def generate_image():
         # Save data to database
         barcode_id = save_barcode_data(data)
         
-        # Create the image
-        label_image = create_barcode_label(data)
+        # Create the PDF first (now our primary format)
+        pdf_buffer = create_barcode_label(data)
         
-        # Convert to bytes
-        img_io = io.BytesIO()
-        label_image.save(img_io, 'PNG')
-        img_io.seek(0)
+        # For the image endpoint, we'll convert the PDF to PNG using a system command
+        # This is more reliable than trying to render directly
+        from subprocess import Popen, PIPE
+        import tempfile
         
-        # Return the image
-        return send_file(
-            img_io,
-            mimetype='image/png',
-            as_attachment=True,
-            download_name=f'barcode_{data.get("reportNumber", "label")}.png'
-        )
+        # Write the PDF to a temporary file
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_pdf:
+            tmp_pdf.write(pdf_buffer.getvalue())
+            tmp_pdf_path = tmp_pdf.name
+        
+        # Create a temporary file for the output PNG
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_png:
+            tmp_png_path = tmp_png.name
+        
+        try:
+            # Try to convert using ImageMagick if available
+            process = Popen(['convert', '-density', '300', tmp_pdf_path, '-quality', '100', tmp_png_path], 
+                           stdout=PIPE, stderr=PIPE)
+            stdout, stderr = process.communicate()
+            
+            # Read the PNG file
+            with open(tmp_png_path, 'rb') as png_file:
+                img_data = png_file.read()
+            
+            # Clean up temporary files
+            os.unlink(tmp_pdf_path)
+            os.unlink(tmp_png_path)
+            
+            # Return the image
+            img_io = io.BytesIO(img_data)
+            return send_file(
+                img_io,
+                mimetype='image/png',
+                as_attachment=True,
+                download_name=f'barcode_{data.get("reportNumber", "label")}.png'
+            )
+        except:
+            # If ImageMagick fails, fallback to returning the PDF
+            os.unlink(tmp_pdf_path)
+            if os.path.exists(tmp_png_path):
+                os.unlink(tmp_png_path)
+            
+            # Just return the PDF instead
+            pdf_buffer.seek(0)
+            return send_file(
+                pdf_buffer,
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=f'barcode_{data.get("reportNumber", "label")}.pdf'
+            )
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -378,9 +357,8 @@ def regenerate_pdf(id):
         'requestedEngraving': barcode.requested_engraving
     }
     
-    # Create the image and PDF
-    label_image = create_barcode_label(data)
-    pdf_buffer = convert_image_to_pdf(label_image)
+    # Create the PDF directly
+    pdf_buffer = create_barcode_label(data)
     
     # Return the PDF
     return send_file(
@@ -393,6 +371,7 @@ def regenerate_pdf(id):
 @app.route('/barcodes/<int:id>/regenerate_image', methods=['GET'])
 def regenerate_image(id):
     """Regenerate image from saved data"""
+    # This now follows the generate_image approach of converting the PDF
     barcode = BarcodeData.query.get_or_404(id)
     
     # Convert database model to dict that matches the expected format
@@ -407,21 +386,58 @@ def regenerate_image(id):
         'requestedEngraving': barcode.requested_engraving
     }
     
-    # Create the image
-    label_image = create_barcode_label(data)
+    # Create the PDF first
+    pdf_buffer = create_barcode_label(data)
     
-    # Convert to bytes
-    img_io = io.BytesIO()
-    label_image.save(img_io, 'PNG')
-    img_io.seek(0)
+    # For the image endpoint, convert as in generate_image
+    from subprocess import Popen, PIPE
+    import tempfile
     
-    # Return the image
-    return send_file(
-        img_io,
-        mimetype='image/png',
-        as_attachment=True,
-        download_name=f'barcode_{barcode.report_number}.png'
-    )
+    # Write the PDF to a temporary file
+    with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_pdf:
+        tmp_pdf.write(pdf_buffer.getvalue())
+        tmp_pdf_path = tmp_pdf.name
+    
+    # Create a temporary file for the output PNG
+    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_png:
+        tmp_png_path = tmp_png.name
+    
+    try:
+        # Try to convert using ImageMagick if available
+        process = Popen(['convert', '-density', '300', tmp_pdf_path, '-quality', '100', tmp_png_path], 
+                       stdout=PIPE, stderr=PIPE)
+        stdout, stderr = process.communicate()
+        
+        # Read the PNG file
+        with open(tmp_png_path, 'rb') as png_file:
+            img_data = png_file.read()
+        
+        # Clean up temporary files
+        os.unlink(tmp_pdf_path)
+        os.unlink(tmp_png_path)
+        
+        # Return the image
+        img_io = io.BytesIO(img_data)
+        return send_file(
+            img_io,
+            mimetype='image/png',
+            as_attachment=True,
+            download_name=f'barcode_{barcode.report_number}.png'
+        )
+    except:
+        # If ImageMagick fails, fallback to returning the PDF
+        os.unlink(tmp_pdf_path)
+        if os.path.exists(tmp_png_path):
+            os.unlink(tmp_png_path)
+        
+        # Just return the PDF instead
+        pdf_buffer.seek(0)
+        return send_file(
+            pdf_buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f'barcode_{barcode.report_number}.pdf'
+        )
 
 # Health check endpoint
 @app.route('/health', methods=['GET'])

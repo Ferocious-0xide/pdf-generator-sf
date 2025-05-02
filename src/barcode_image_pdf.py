@@ -620,10 +620,44 @@ def generate_pdf_from_base64():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
-# Health check endpoint
 @app.route('/health', methods=['GET'])
 def health_check():
     return jsonify({'status': 'healthy'}), 200
+
+@app.route('/verify_base64_image', methods=['POST'])
+def verify_base64_image():
+    """Decode and return the base64 image for verification"""
+    try:
+        # Get JSON data from request
+        data = request.json
+        
+        # Extract base64 encoded barcode
+        barcode_base64 = data.get('barcodeBase64', '')
+        
+        if not barcode_base64:
+            return jsonify({'error': 'No base64 image provided'}), 400
+            
+        # Fix padding if needed
+        barcode_base64 += '=' * (-len(barcode_base64) % 4)
+        
+        # Decode base64
+        barcode_data = base64.b64decode(barcode_base64)
+        
+        # Create a BytesIO object for the image
+        img_io = io.BytesIO(barcode_data)
+        img_io.seek(0)
+        
+        # Return the raw image
+        return send_file(
+            img_io,
+            mimetype='image/png',
+            as_attachment=True,
+            download_name='original_barcode.png'
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 # Create database tables
 with app.app_context():

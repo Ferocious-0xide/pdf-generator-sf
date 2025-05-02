@@ -201,11 +201,12 @@ def create_barcode_label(data):
         if label == 'ENG':
             draw.text((table_x + col_width + 10, y), "Y|N", font=small_font, fill='black')
     
-    # Save a local copy for debugging
-    debug_dir = os.path.dirname(os.path.abspath(__file__))
-    debug_file = os.path.join(debug_dir, '..', '..', 'label_debug.png')
-    debug_file = os.path.abspath(debug_file)
-    img.save(debug_file)
+    # Save a local copy for debugging only if not on Heroku
+    if 'DYNO' not in os.environ:
+        debug_dir = os.path.dirname(os.path.abspath(__file__))
+        debug_file = os.path.join(debug_dir, '..', '..', 'label_debug.png')
+        debug_file = os.path.abspath(debug_file)
+        img.save(debug_file)
     
     return img
 
